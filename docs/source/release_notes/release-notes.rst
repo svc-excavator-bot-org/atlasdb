@@ -43,7 +43,37 @@ develop
          - Change
 
     *    - |improved|
-         - Refactored ``AvailableTimestamps`` reducing overzealous synchronization. Giving out timestamps is no longer blocking on refreshing the timestamp bound if there are enough timestamps to give out with the current bound.
+         - Improved performance of getRange() on DbKvs. Range requests are now done with a single round trip to the database.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1805>`__)
+
+    *    - |userbreak|
+         - AtlasDB will refuse to start if backed by Postgres 9.5.0 or 9.5.1. These versions contain a known bug that causes incorrect results to be returned for certain queries.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1820>`__)
+
+    *    - |new|
+         - Atlas Console tables now have a join() method.  See ``help("join")`` in Atlas Console for more details.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1814>`__)
+
+.. <<<<------------------------------------------------------------------------------------------------------------->>>>
+
+
+=======
+v0.39.0
+=======
+
+19 Apr 2017
+
+.. list-table::
+    :widths: 5 40
+    :header-rows: 1
+
+    *    - Type
+         - Change
+
+    *    - |improved|
+         - Refactored ``AvailableTimestamps`` reducing overzealous synchronization.
+           Giving out timestamps is no longer blocking on refreshing the timestamp bound if there are enough timestamps to give out with the current bound.
+           This improves latency of timestamp requests under heavy load; we have seen an approximately 30 percent improvement on internal benchmarks.
            (`Pull Request <https://github.com/palantir/atlasdb/pull/1783>`__)
 
     *    - |improved|
