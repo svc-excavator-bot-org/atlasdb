@@ -46,6 +46,83 @@ develop
          - Improved performance of getRange() on DbKvs. Range requests are now done with a single round trip to the database.
            (`Pull Request <https://github.com/palantir/atlasdb/pull/1805>`__)
 
+    *    - |improved|
+         - Add instrumentation to the thread pool used to run quorum checks during leader elections. This will be useful for
+           debugging `PaxosQuorumChecker can leave hanging threads <https://github.com/palantir/atlasdb/issues/1823>`.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1849>`__)
+
+    *    - |fixed|
+         - Fixed DbKvs.getRangeOfTimestamps() only returning the first page of results rather than paging through the whole range.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1872>`__)
+
+    *    - |fixed|
+         - Fixed a bug that would cause console to error on any range request that used a column selection and had more than one batch of results.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1876>`__)
+
+.. <<<<------------------------------------------------------------------------------------------------------------->>>>
+
+
+======
+0.40.1
+======
+
+4 May 2017
+
+This release contains (almost) exclusively baseline-related changes.
+
+.. list-table::
+    :widths: 5 40
+    :header-rows: 1
+
+    *    - Type
+         - Change
+
+    *    - |devbreak|
+         - The Lock Descriptor classes (``AtlasCellLockDescriptor`` etc.), static factories (e.g. ``LockCollections``) and ``LockClient`` have been made final.
+           If this is a concern, please contact the AtlasDB team.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1857>`__)
+
+    *    - |devbreak|
+         - Removed package ``atlasdb-exec``. If you require this package, please file a ticket to have it reinstated.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1861>`__)
+
+    *    - |changed|
+         - Our dependency on immutables was bumped from 2.2.4 to 2.4.0, in order to fix an issue with static code analysis reporting errors in generated code.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1853>`__)
+
+    *    - |devbreak|
+         - Renamed the following classes to match baseline rules. In each case, acronyms were lowercased, e.g. ``CQL`` becomes ``Cql``.
+
+              - ``CqlExpiringKeyValueService``
+              - ``CqlKeyValueService``
+              - ``CqlKeyValueServices``
+              - ``CqlStatementCache``
+              - ``KvTableMappingService``
+              - ``TransactionKvsWrapper``
+
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1853>`__)
+
+    *    - |devbreak|
+         - Relax the signature of KeyValueService.addGarbageCollectionSentinelValues() to take an Iterable instead of a Set.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1843>`__)
+
+.. <<<<------------------------------------------------------------------------------------------------------------->>>>
+
+
+======
+0.40.0
+======
+
+28 Apr 2017
+
+.. list-table::
+    :widths: 5 40
+    :header-rows: 1
+
+    *    - Type
+         - Change
+>>>>>>> b258e65ab... Fix DbKvs.getRangeOfTimestamps() only returning the first page (#1872)
+
     *    - |userbreak|
          - AtlasDB will refuse to start if backed by Postgres 9.5.0 or 9.5.1. These versions contain a known bug that causes incorrect results to be returned for certain queries.
            (`Pull Request <https://github.com/palantir/atlasdb/pull/1820>`__)
