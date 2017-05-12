@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Palantir Technologies
+ * Copyright 2017 Palantir Technologies, Inc. All rights reserved.
  *
  * Licensed under the BSD-3 License (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,14 +13,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.palantir.atlasdb.jdbc;
+package com.palantir.atlasdb.sweep.priority;
 
-import com.palantir.atlasdb.keyvalue.api.KeyValueService;
-import com.palantir.atlasdb.sweep.AbstractSweeperTest;
+import java.util.OptionalLong;
 
-public class JdbcSweeperTest extends AbstractSweeperTest {
-    @Override
-    protected KeyValueService getKeyValueService() {
-        return JdbcTests.createEmptyKvs();
-    }
+import org.immutables.value.Value;
+
+import com.palantir.atlasdb.keyvalue.api.TableReference;
+
+@Value.Immutable
+public interface SweepPriority {
+
+    TableReference tableRef();
+
+    long writeCount();
+
+    OptionalLong lastSweepTimeMillis();
+
+    long minimumSweptTimestamp();
+
+    long cellsDeleted();
+
+    long cellsExamined();
+
 }
