@@ -15,20 +15,15 @@
  */
 package com.palantir.atlasdb.cli;
 
-import java.util.concurrent.Callable;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.palantir.atlasdb.cli.command.CleanCassLocksStateCommand;
 import com.palantir.atlasdb.cli.command.KvsMigrationCommand;
 import com.palantir.atlasdb.cli.command.SweepCommand;
 import com.palantir.atlasdb.cli.command.timestamp.CleanTransactionRange;
-import com.palantir.atlasdb.cli.command.timestamp.FastForwardTimestamp;
-import com.palantir.atlasdb.cli.command.timestamp.FetchTimestamp;
-
 import io.airlift.airline.Cli;
 import io.airlift.airline.Help;
+import java.util.concurrent.Callable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class AtlasCli {
 
@@ -36,6 +31,7 @@ public final class AtlasCli {
 
     private AtlasCli() {}
 
+    @SuppressWarnings("unchecked")
     public static Cli<Callable> buildCli() {
         Cli.CliBuilder<Callable> builder = Cli.<Callable>builder("atlasdb")
                 .withDescription("Perform common AtlasDB tasks")
@@ -49,10 +45,7 @@ public final class AtlasCli {
         builder.withGroup("timestamp")
                 .withDescription("Timestamp-centric commands")
                 .withDefaultCommand(Help.class)
-                .withCommands(
-                        FetchTimestamp.class,
-                        CleanTransactionRange.class,
-                        FastForwardTimestamp.class);
+                .withCommands(CleanTransactionRange.class);
 
         return builder.build();
     }
