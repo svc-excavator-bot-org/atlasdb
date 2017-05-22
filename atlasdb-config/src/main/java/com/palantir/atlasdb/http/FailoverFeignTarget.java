@@ -24,7 +24,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -48,14 +47,13 @@ public class FailoverFeignTarget<T> implements Target<T>, Retryer {
 
     private final ImmutableList<String> servers;
     private final Class<T> type;
-    private final AtomicInteger failoverCount = new AtomicInteger();
-    @VisibleForTesting
-    final int failuresBeforeSwitching = 3;
+    private final AtomicInteger serverIndex = new AtomicInteger();
     private final int numServersToTryBeforeFailing = 14;
     private final int fastFailoverTimeoutMillis = 10000;
     private final int maxBackoffMillis;
 
     private final AtomicLong failuresSinceLastSwitch = new AtomicLong();
+    private final AtomicLong numFastFailoverRetries = new AtomicLong();
     private final AtomicLong numSwitches = new AtomicLong();
     private final AtomicLong startTimeOfFastFailover = new AtomicLong();
 
@@ -73,6 +71,7 @@ public class FailoverFeignTarget<T> implements Target<T>, Retryer {
     }
 
     public void sucessfulCall() {
+        numFastFailoverRetries.set(0);
         numSwitches.set(0);
         failuresSinceLastSwitch.set(0);
         startTimeOfFastFailover.set(0);
@@ -83,71 +82,68 @@ public class FailoverFeignTarget<T> implements Target<T>, Retryer {
         ExceptionRetryBehaviour retryBehaviour = ExceptionRetryBehaviour.getRetryBehaviourForException(ex);
 
         synchronized (this) {
-            // Only fail over if this failure was to the current server.
-            // This means that no one on another thread has failed us over already.
-            if (mostRecentServerIndex.get() != null && mostRecentServerIndex.get() == failoverCount.get()) {
-                long failures = failuresSinceLastSwitch.incrementAndGet();
-                if (shouldSwitchNode(retryBehaviour, failures)) {
-                    failoverToNextNode(retryBehaviour);
-                } else if (retryBehaviour.shouldRetryInfinitelyManyTimes()) {
+            // This means that another thread has failed us over already. Do nothing.
+            if (mostRecentServerIndex.get() == null || mostRecentServerIndex.get() != serverIndex.get()) {
+//                checkAndHandleFailure(ex);
+//                if (retryBehaviour.shouldBackoff()) {
+//                    pauseForBackOff(ex);
+//                }
+                return;
+            }
+
+            if (retryBehaviour.isFastFailover()) {
+                startTimeOfFastFailover.compareAndSet(0, System.currentTimeMillis());
+
+                final long fastFailoverStartTime = startTimeOfFastFailover.get();
+                final long currentTime = System.currentTimeMillis();
+                if (fastFailoverStartTime != 0
+                        && (currentTime - fastFailoverStartTime) > fastFailoverTimeoutMillis) {
+                    log.error("This connection has been instructed to fast failover for {}"
+                                    + " seconds without establishing a successful connection."
+                                    + " The remote hosts have been in a fast failover state for too long.",
+                            TimeUnit.MILLISECONDS.toSeconds(fastFailoverTimeoutMillis));
+                    throw ex;
+                }
+
+                serverIndex.incrementAndGet();
+                if (serverIndex.get() % servers.size() == 0) {
+                    pauseForBackOff(ex, 1000);
+                } else {
+                    pauseForBackOff(ex, 1);
+                }
+
+                return;
+            }
+            startTimeOfFastFailover.set(0);
+
+            if (retryBehaviour.shouldAlsoRetryOnOtherNodes()) {
+                final int numberOfRetriesOnSameNode = retryBehaviour.numberOfRetriesOnSameNode();
+
+                if (failuresSinceLastSwitch.incrementAndGet() >= numberOfRetriesOnSameNode) {
+                    serverIndex.incrementAndGet();
                     failuresSinceLastSwitch.set(0);
                 }
+
+                if (serverIndex.get() >= numServersToTryBeforeFailing) {
+                    log.error("This connection has tried {} hosts rolling across {} servers, each {} times and has failed out.",
+                            numServersToTryBeforeFailing, servers.size(), numberOfRetriesOnSameNode, ex);
+                    throw ex;
+                }
+
+                long pauseTime = Math.round(Math.pow(GOLDEN_RATIO,
+                        serverIndex.get() * retryBehaviour.numberOfRetriesOnSameNode() + failuresSinceLastSwitch.get()));
+                pauseForBackOff(ex, pauseTime);
+                return;
+            }
+
+            if (retryBehaviour.shouldBackoff()) {
+                pauseForBackOff(ex, 1);
             }
         }
-
-        checkAndHandleFailure(ex);
-        if (retryBehaviour.shouldBackoffAndTryOtherNodes()) {
-            pauseForBackOff(ex);
-        }
     }
 
-    private boolean shouldSwitchNode(ExceptionRetryBehaviour retryBehaviour, long failures) {
-        return retryBehaviour.shouldBackoffAndTryOtherNodes()
-                || (!retryBehaviour.shouldRetryInfinitelyManyTimes() && failures >= failuresBeforeSwitching);
-    }
-
-    private void failoverToNextNode(ExceptionRetryBehaviour retryBehaviour) {
-        if (retryBehaviour.shouldBackoffAndTryOtherNodes()) {
-            // We did talk to a node successfully. It was shutting down but nodes are available
-            // so we shouldn't keep making the backoff higher.
-            numSwitches.set(0);
-            startTimeOfFastFailover.compareAndSet(0, System.currentTimeMillis());
-        } else {
-            numSwitches.incrementAndGet();
-            startTimeOfFastFailover.set(0);
-        }
-        failuresSinceLastSwitch.set(0);
-        failoverCount.incrementAndGet();
-    }
-
-    private void checkAndHandleFailure(RetryableException ex) {
-        final long fastFailoverStartTime = startTimeOfFastFailover.get();
-        final long currentTime = System.currentTimeMillis();
-        boolean failedDueToFastFailover = fastFailoverStartTime != 0
-                && (currentTime - fastFailoverStartTime) > fastFailoverTimeoutMillis;
-        boolean failedDueToNumSwitches = numSwitches.get() >= numServersToTryBeforeFailing;
-
-        if (failedDueToFastFailover) {
-            log.error("This connection has been instructed to fast failover for {}"
-                    + " seconds without establishing a successful connection."
-                    + " The remote hosts have been in a fast failover state for too long.",
-                    TimeUnit.MILLISECONDS.toSeconds(fastFailoverTimeoutMillis));
-        } else if (failedDueToNumSwitches) {
-            log.error("This connection has tried {} hosts rolling across {} servers, each {} times and has failed out.",
-                    numServersToTryBeforeFailing, servers.size(), failuresBeforeSwitching, ex);
-        }
-
-        if (failedDueToFastFailover || failedDueToNumSwitches) {
-            throw ex;
-        }
-    }
-
-
-    private void pauseForBackOff(RetryableException ex) {
-        double pow = Math.pow(
-                GOLDEN_RATIO,
-                numSwitches.get() * failuresBeforeSwitching + failuresSinceLastSwitch.get());
-        long timeout = Math.min(maxBackoffMillis, Math.round(pow));
+    private synchronized void pauseForBackOff(RetryableException ex, long pauseTimeInMillis) {
+        long timeout = Math.min(maxBackoffMillis, pauseTimeInMillis);
 
         try {
             log.trace("Pausing {}ms before retrying", timeout);
@@ -178,7 +174,7 @@ public class FailoverFeignTarget<T> implements Target<T>, Retryer {
 
     @Override
     public String url() {
-        int indexToHit = failoverCount.get();
+        int indexToHit = serverIndex.get();
         mostRecentServerIndex.set(indexToHit);
         return servers.get(indexToHit % servers.size());
     }

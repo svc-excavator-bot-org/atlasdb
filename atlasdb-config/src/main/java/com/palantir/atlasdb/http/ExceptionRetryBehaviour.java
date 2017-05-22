@@ -20,52 +20,70 @@ import com.palantir.lock.remoting.BlockingTimeoutException;
 
 import feign.RetryableException;
 
-public enum ExceptionRetryBehaviour {
-    RETRY_ON_OTHER_NODE(true, true),
-    RETRY_INDEFINITELY_ON_SAME_NODE(true, false),
-    RETRY_ON_SAME_NODE(false, false);
+public class ExceptionRetryBehaviour {
 
-    private final boolean shouldRetryInfinitelyManyTimes;
-    private final boolean shouldBackoffAndTryOtherNodes;
+//    RETRY_ON_OTHER_NODE(true, true),
+//    RETRY_INDEFINITELY_ON_SAME_NODE(true, false),
+//    RETRY_ON_SAME_NODE(false, false);
 
-    ExceptionRetryBehaviour(boolean shouldRetryInfinitelyManyTimes, boolean shouldBackoffAndTryOtherNodes) {
-        this.shouldRetryInfinitelyManyTimes = shouldRetryInfinitelyManyTimes;
-        this.shouldBackoffAndTryOtherNodes = shouldBackoffAndTryOtherNodes;
+//    private final boolean shouldRetryInfinitelyManyTimes;
+//    private final boolean shouldBackoffAndTryOtherNodes;
+
+//    /**
+//     * Returns true if and only if clients which have defined a finite limit for the number
+//     * of retries should retry infinitely many times. Typically, this implies that the failure of the
+//     * node in question is not reflective of a failing condition of the cluster in general (such as the node
+//     * in question shutting down, or it not being the leader.)
+//     */
+//    public boolean shouldRetryInfinitelyManyTimes() {
+//        return shouldRetryInfinitelyManyTimes;
+//    }
+
+//    /**
+//     * Returns true if clients should, where possible, retry on other nodes before retrying on this
+//     * node. Note that a value of false here does not necessarily mean that clients should not retry on other nodes.
+//     */
+//    public boolean shouldBackoffAndTryOtherNodes() {
+//        return shouldBackoffAndTryOtherNodes;
+//    }
+
+    public enum Backoff {
+        BACKOFF,
+        NO_BACKOFF
+    }
+
+    public enum RetryOnOtherNodes {
+        AFTER_1_TIME,
+        AFTER_3_TIMES,
+        NEVER,
+    }
+
+    private final Backoff backoff;
+    private final RetryOnOtherNodes retryOnOtherNodes;
+
+    private ExceptionRetryBehaviour(Backoff backoff, RetryOnOtherNodes retryOnOtherNodes) {
+        this.backoff = backoff;
+        this.retryOnOtherNodes = retryOnOtherNodes;
     }
 
     public static ExceptionRetryBehaviour getRetryBehaviourForException(RetryableException retryableException) {
         if (isCausedByBlockingTimeout(retryableException)) {
             // This is the case where we have a network request that failed because it blocked too long on a lock.
             // Since it is still the leader, we want to try again on the same node.
-            return RETRY_INDEFINITELY_ON_SAME_NODE;
+//            return RETRY_INDEFINITELY_ON_SAME_NODE;
+            return new ExceptionRetryBehaviour(Backoff.BACKOFF, RetryOnOtherNodes.NEVER);
         }
 
         if (retryableException.retryAfter() != null) {
             // This is the case where the server has returned a 503.
             // This is done when we want to do fast failover because we aren't the leader or we are shutting down.
-            return RETRY_ON_OTHER_NODE;
+//            return RETRY_ON_OTHER_NODE;
+            return new ExceptionRetryBehaviour(Backoff.NO_BACKOFF, RetryOnOtherNodes.AFTER_1_TIME);
         }
 
         // This is the case where we have failed due to networking or other IOException.
-        return RETRY_ON_SAME_NODE;
-    }
-
-    /**
-     * Returns true if and only if clients which have defined a finite limit for the number
-     * of retries should retry infinitely many times. Typically, this implies that the failure of the
-     * node in question is not reflective of a failing condition of the cluster in general (such as the node
-     * in question shutting down, or it not being the leader.)
-     */
-    public boolean shouldRetryInfinitelyManyTimes() {
-        return shouldRetryInfinitelyManyTimes;
-    }
-
-    /**
-     * Returns true if clients should, where possible, retry on other nodes before retrying on this
-     * node. Note that a value of false here does not necessarily mean that clients should not retry on other nodes.
-     */
-    public boolean shouldBackoffAndTryOtherNodes() {
-        return shouldBackoffAndTryOtherNodes;
+//        return RETRY_ON_SAME_NODE;
+        return new ExceptionRetryBehaviour(Backoff.BACKOFF, RetryOnOtherNodes.AFTER_3_TIMES);
     }
 
     private static boolean isCausedByBlockingTimeout(RetryableException retryableException) {
@@ -75,5 +93,29 @@ public enum ExceptionRetryBehaviour {
 
     private static String getCausingErrorName(RetryableException retryableException) {
         return ((AtlasDbRemoteException) retryableException.getCause()).getErrorName();
+    }
+
+    public boolean isFastFailover() {
+        return backoff.equals(Backoff.NO_BACKOFF) && retryOnOtherNodes.equals(RetryOnOtherNodes.AFTER_1_TIME);
+    }
+
+    public boolean shouldBackoff() {
+        return backoff.equals(Backoff.BACKOFF);
+    }
+
+    public boolean shouldAlsoRetryOnOtherNodes() {
+        return !retryOnOtherNodes.equals(RetryOnOtherNodes.NEVER);
+    }
+
+    public boolean shouldAlwaysRetryOnSameNode() {
+        return retryOnOtherNodes.equals(RetryOnOtherNodes.NEVER);
+    }
+
+    public int numberOfRetriesOnSameNode() {
+        switch (retryOnOtherNodes) {
+            case NEVER: return -1;
+            case AFTER_1_TIME: return 1;
+            case AFTER_3_TIMES: return 3;
+        }
     }
 }
