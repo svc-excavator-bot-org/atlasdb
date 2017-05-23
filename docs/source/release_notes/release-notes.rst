@@ -51,6 +51,70 @@ develop
            debugging `PaxosQuorumChecker can leave hanging threads <https://github.com/palantir/atlasdb/issues/1823>`.
            (`Pull Request <https://github.com/palantir/atlasdb/pull/1849>`__)
 
+    *    - |improved|
+         - Sweep now batches delete calls before executing them.
+           This should improve performance on relatively clean tables by deleting more cells at a time, leading to fewer DB operations and taking out the backup lock less frequently.
+           The new configuration parameter ``sweepDeleteBatchHint`` determines the approximate number of (cell, timestamp) pairs deleted in a single batch.
+           Please refer to the :ref:`documentation <sweep_tunable_parameters>` for details of how to configure this.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1911>`__)
+
+    *    - |changed|
+         - :ref:`Sweep metrics <dropwizard-metrics>` now record counts of cell-timestamp pairs examined rather than the count of entire cells examined. This provides more accurate insight on the work done by the sweeper.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1911>`__)
+
+    *    - |userbreak|
+         - The Sweep CLI configuration parameters ``--batch-size`` and ``--cell-batch-size`` have been removed, as we now batch on cell-timestamp pairs rather than by rows and cells.
+           Please use the ``--candidate-batch-hint`` parameter instead of ``--batch-hint``, and ``--read-limit`` instead of ``--cell-batch-size`` (:ref:`docs <sweep_tunable_parameters>`).
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1911>`__)
+
+    *    - |deprecated|
+         - Configuration parameters ``sweepBatchSize`` and ``sweepCellBatchSize`` have been deprecated in favour of ``sweepCandidateBatchHint`` and ``sweepReadLimit`` respectively.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1911>`__)
+
+    *    - |improved|
+         - ``ProfilingKeyValueService`` now has some additional logging mechanisms for logging long-running operations on WARN level, enabled by default.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1801>`__)
+
+======
+0.41.0
+======
+
+17 May 2017
+
+.. list-table::
+    :widths: 5 40
+    :header-rows: 1
+
+    *    - Type
+         - Change
+
+    *    - |userbreak| |changed|
+         - Projects ``atlasdb-commons``, ``commons-annotations``, ``commons-api``, ``commons-executors``, ``commons-proxy``, and ``lock-api`` no longer force Java 6 compatibility.
+           This eliminates the need for a Java 6 compiler to compile AtlasDB.
+           However, users can no longer compile against AtlasDB artifacts using Java 6 or 7; they must use Java 8 if depending on these AtlasDB projects.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1887>`__)
+
+    *    - |devbreak| |improved|
+         - The format of serialized exceptions occurring on a remote host has been brought in line with that of the `palantir/http-remoting <https://github.com/palantir/http-remoting>`__ library.
+           This should generally improve readability and also allows for more meaningful messages to be sent; we would previously return message bodies with no content for some exceptions (such as ``NotCurrentLeaderException``).
+           In particular, the assumption that a status code of 503 definitively means that the node being contacted is not the leader is no longer valid.
+           That said, existing AtlasDB clients will still behave correctly even with a new TimeLock.
+           (`Pull Request 1 <https://github.com/palantir/atlasdb/pull/1831>`__,
+           `Pull Request 2 <https://github.com/palantir/atlasdb/pull/1808>`__)
+
+    *    - |new|
+         - Timelock server now has jar publication in addition to dist publication.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1898>`__)
+
+    *    - |new| |fixed|
+         - TimeLock clients may now receive an HTTP response with status code 503, encapsulating a ``BlockingTimeoutException``.
+           This response is returned if a client makes a lock request that blocks for long enough that the server's idle timeout expires; clients may (immediately) retry the request.
+           Previously, these requests would be failed with a HTTP-level exception that the stream was closed.
+           We have rewritten clients constructed via ``AtlasDbHttpClients`` to account for this new behaviour, but custom clients directly accessing the lock service may be affected.
+           This feature is disabled by default, but can be enabled following the TimeLock server configuration :ref:`docs <timelock-server-time-limiting>`.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/1808>`__)
+>>>>>>> 69bd0a7f7... The big sweep rewrite, part 1 (#1911)
+
     *    - |fixed|
          - Fixed DbKvs.getRangeOfTimestamps() only returning the first page of results rather than paging through the whole range.
            (`Pull Request <https://github.com/palantir/atlasdb/pull/1872>`__)
@@ -121,7 +185,6 @@ This release contains (almost) exclusively baseline-related changes.
 
     *    - Type
          - Change
->>>>>>> b258e65ab... Fix DbKvs.getRangeOfTimestamps() only returning the first page (#1872)
 
     *    - |userbreak|
          - AtlasDB will refuse to start if backed by Postgres 9.5.0 or 9.5.1. These versions contain a known bug that causes incorrect results to be returned for certain queries.

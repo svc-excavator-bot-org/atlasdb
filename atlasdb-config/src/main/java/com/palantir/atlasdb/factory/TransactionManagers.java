@@ -20,6 +20,7 @@ import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import javax.annotation.Nullable;
 import javax.net.ssl.SSLSocketFactory;
 
 import org.immutables.value.Value;
@@ -28,12 +29,14 @@ import org.slf4j.LoggerFactory;
 
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Optional;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import com.palantir.atlasdb.AtlasDbConstants;
 import com.palantir.atlasdb.cleaner.Cleaner;
 import com.palantir.atlasdb.cleaner.CleanupFollower;
 import com.palantir.atlasdb.cleaner.DefaultCleanerBuilder;
@@ -62,8 +65,10 @@ import com.palantir.atlasdb.spi.AtlasDbFactory;
 import com.palantir.atlasdb.sweep.BackgroundSweeper;
 import com.palantir.atlasdb.sweep.BackgroundSweeperImpl;
 import com.palantir.atlasdb.sweep.CellsSweeper;
+import com.palantir.atlasdb.sweep.ImmutableSweepBatchConfig;
 import com.palantir.atlasdb.sweep.NoOpBackgroundSweeperPerformanceLogger;
 import com.palantir.atlasdb.sweep.PersistentLockManager;
+import com.palantir.atlasdb.sweep.SweepBatchConfig;
 import com.palantir.atlasdb.sweep.SweepTaskRunner;
 import com.palantir.atlasdb.table.description.Schema;
 import com.palantir.atlasdb.table.description.Schemas;
@@ -257,14 +262,44 @@ public final class TransactionManagers {
                 sweepRunner,
                 Suppliers.ofInstance(config.enableSweep()),
                 Suppliers.ofInstance(config.getSweepPauseMillis()),
-                Suppliers.ofInstance(config.getSweepBatchSize()),
-                Suppliers.ofInstance(config.getSweepCellBatchSize()),
+                Suppliers.ofInstance(getSweepBatchConfig(config)),
                 SweepTableFactory.of(),
                 new NoOpBackgroundSweeperPerformanceLogger(),
                 persistentLockManager);
         backgroundSweeper.runInBackground();
 
         return transactionManager;
+    }
+
+    private static SweepBatchConfig getSweepBatchConfig(AtlasDbConfig config) {
+        if (config.getSweepBatchSize() != null || config.getSweepCellBatchSize() != null) {
+            log.warn("Configuration parameters 'sweepBatchSize' and 'sweepCellBatchSize' have been deprecated"
+                    + " in favor of 'sweepMaxCellTsPairsToExamine', 'sweepCandidateBatchSize'"
+                    + " and 'sweepDeleteBatchSize'. Please update your configuration files.");
+        }
+        return ImmutableSweepBatchConfig.builder()
+                .maxCellTsPairsToExamine(chooseBestValue(
+                        config.getSweepReadLimit(),
+                        config.getSweepCellBatchSize(),
+                        AtlasDbConstants.DEFAULT_SWEEP_READ_LIMIT))
+                .candidateBatchSize(chooseBestValue(
+                        config.getSweepCandidateBatchHint(),
+                        config.getSweepBatchSize(),
+                        AtlasDbConstants.DEFAULT_SWEEP_CANDIDATE_BATCH_HINT))
+                .deleteBatchSize(MoreObjects.firstNonNull(
+                        config.getSweepDeleteBatchHint(),
+                        AtlasDbConstants.DEFAULT_SWEEP_DELETE_BATCH_HINT))
+                .build();
+    }
+
+    private static int chooseBestValue(@Nullable Integer newOption, @Nullable Integer oldOption, int defaultValue) {
+        if (newOption != null) {
+            return newOption;
+        } else if (oldOption != null) {
+            return oldOption;
+        } else {
+            return defaultValue;
+        }
     }
 
     private static PersistentLockService createAndRegisterPersistentLockService(KeyValueService kvs, Environment env) {
