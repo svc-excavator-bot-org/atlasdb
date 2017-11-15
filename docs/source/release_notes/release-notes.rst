@@ -48,6 +48,10 @@ develop
     *    - Type
          - Change
 
+    *    - |new|
+         - ``TimeLockAgent`` exposes a new method, ``getStatus()``, to be used by the internal TimeLock instance in order to provide a health check.
+           (`Pull Request <https://github.com/palantir/atlasdb/pull/2xxx>`__)
+
     *    - |new| |metrics|
          - We now record metrics for most cases where cells fetched from Cassandra are post-filtered before returning to the client.
            The new metrics are called ``notLatestVisibleValueCellFilterCount``, ``commitTsGreaterThatTxTsCellFilterCount``,
